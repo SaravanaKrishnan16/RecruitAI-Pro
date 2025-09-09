@@ -1,0 +1,9 @@
+{
+  "name": "mock-interview-lambdas",
+  "version": "1.0.0",
+  "description": "Lambda functions for Mock Interview Assistant",
+  "dependencies": {
+    "aws-sdk": "^2.1490.0",
+    "uuid": "^9.0.1"
+  }
+}

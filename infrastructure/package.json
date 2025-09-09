@@ -1,0 +1,19 @@
+{
+  "name": "mock-interview-infrastructure",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "tsc",
+    "deploy": "npm run build && cdk deploy --all --require-approval never",
+    "synth": "cdk synth",
+    "bootstrap": "cdk bootstrap"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.100.0",
+    "constructs": "^10.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.0",
+    "typescript": "^5.2.2",
+    "aws-cdk": "^2.100.0"
+  }
+}
