@@ -76,7 +76,10 @@ export class MockInterviewStack extends cdk.Stack {
           statements: [
             new iam.PolicyStatement({
               effect: iam.Effect.ALLOW,
-              actions: ['dynamodb:*', 's3:*', 'textract:*', 'comprehend:*', 'bedrock:*', 'transcribe:*'],
+              actions: [
+                'dynamodb:*', 's3:*', 'textract:*', 'comprehend:*', 'bedrock:*', 'transcribe:*',
+                'qbusiness:*', 'bedrock-agent:*'
+              ],
               resources: ['*'],
             }),
           ],
@@ -104,6 +107,9 @@ export class MockInterviewStack extends cdk.Stack {
       role: lambdaRole,
       environment: {
         INTERVIEWS_TABLE: interviewsTable.tableName,
+        AMAZON_Q_APP_ID: process.env.AMAZON_Q_APP_ID || 'default-app-id',
+        MCP_AGENT_ID: process.env.MCP_AGENT_ID || 'default-agent-id',
+        MCP_AGENT_ALIAS_ID: process.env.MCP_AGENT_ALIAS_ID || 'default-alias-id',
       },
       timeout: cdk.Duration.minutes(3),
     });
@@ -138,6 +144,9 @@ export class MockInterviewStack extends cdk.Stack {
       role: lambdaRole,
       environment: {
         CANDIDATES_TABLE: candidatesTable.tableName,
+        INDEED_API_KEY: process.env.INDEED_API_KEY || 'your_indeed_api_key',
+        MCP_AGENT_ID: process.env.MCP_AGENT_ID || 'default-agent-id',
+        MCP_AGENT_ALIAS_ID: process.env.MCP_AGENT_ALIAS_ID || 'default-alias-id',
       },
       timeout: cdk.Duration.minutes(2),
     });
@@ -202,6 +211,21 @@ export class MockInterviewStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ResumeBucketName', {
       value: resumeBucket.bucketName,
       description: 'S3 Bucket for resumes',
+    });
+
+    new cdk.CfnOutput(this, 'AmazonQIntegration', {
+      value: 'Amazon Q service integrated for question generation',
+      description: 'Amazon Q Configuration',
+    });
+
+    new cdk.CfnOutput(this, 'MCPIntegration', {
+      value: 'MCP service integrated for job recommendations',
+      description: 'MCP Configuration',
+    });
+
+    new cdk.CfnOutput(this, 'IndeedAPIIntegration', {
+      value: 'Indeed API integrated for live job data',
+      description: 'Indeed API Configuration',
     });
   }
 }

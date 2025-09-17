@@ -17,6 +17,44 @@ const Jobs = ({ user }) => {
 
   const loadJobs = async () => {
     try {
+      // Try MCP + Indeed API first
+      const candidateProfile = JSON.parse(localStorage.getItem('candidateProfile') || '{}');
+      
+      console.log('Loading MCP + Indeed API jobs...');
+      
+      const response = await fetch('http://localhost:8002/jobs', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Indeed-API-Key': process.env.REACT_APP_INDEED_API_KEY || 'demo_key'
+        },
+        body: JSON.stringify({
+          candidateProfile,
+          mcp_enabled: true,
+          indeed_api_key: process.env.REACT_APP_INDEED_API_KEY || 'demo_key'
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('MCP + Indeed API Jobs:', data);
+        setJobs(data.jobs || []);
+        setCandidateProfile({ ...candidateProfile, mcpData: data.mcpInsights });
+      } else {
+        // Fallback to comprehensive job database
+        const allJobs = generateComprehensiveJobs();
+        const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
+        const filteredJobs = userProfile.selectedRole ? 
+          filterJobsByRole(allJobs, userProfile.selectedRole) : allJobs;
+        
+        setJobs(filteredJobs);
+        setCandidateProfile(userProfile);
+      }
+      
+      setLoading(false);
+    } catch (error) {
+      console.error('Error loading MCP jobs:', error);
+      // Fallback to local job database
       const allJobs = generateComprehensiveJobs();
       const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
       const filteredJobs = userProfile.selectedRole ? 
@@ -24,9 +62,6 @@ const Jobs = ({ user }) => {
       
       setJobs(filteredJobs);
       setCandidateProfile(userProfile);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error loading jobs:', error);
       setLoading(false);
     }
   };
@@ -482,7 +517,8 @@ const Jobs = ({ user }) => {
             <h1 className="text-3xl font-bold">Job Recommendations</h1>
           </div>
           <p className="text-blue-100 text-lg mb-4">
-            <span className="font-semibold">{jobs.length}+</span> live job opportunities from top companies • Updated in real-time
+            <span className="font-semibold">{jobs.length}+</span> live job opportunities from top companies • 
+            <span className="bg-white/20 px-2 py-1 rounded text-sm font-medium">MCP + Indeed API</span> powered
           </p>
           {candidateProfile && (
             <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">

@@ -6,6 +6,9 @@
     "install-all": "npm install && cd frontend && npm install && cd ../infrastructure && npm install",
     "deploy": "cd infrastructure && npm run deploy",
     "dev": "cd frontend && npm run dev",
+    "dev-services": "concurrently \"node backend/amazon-q-service.js\" \"node backend/mcp-service.js\" \"node backend/simple_api.js\"",
+    "start-amazon-q": "node backend/amazon-q-service.js",
+    "start-mcp": "node backend/mcp-service.js",
     "build": "npm run build-frontend && npm run build-backend",
     "build-frontend": "cd frontend && npm run build",
     "build-backend": "cd infrastructure && npm run build"
@@ -13,6 +16,17 @@
   "devDependencies": {
     "concurrently": "^8.2.2"
   },
-  "keywords": ["mock-interview", "aws", "react", "nodejs", "typescript"],
-  "license": "MIT"
+  "keywords": [
+    "mock-interview",
+    "aws",
+    "react",
+    "nodejs",
+    "typescript"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "uuid": "^13.0.0"
+  }
 }

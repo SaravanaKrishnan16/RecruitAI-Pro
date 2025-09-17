@@ -55,7 +55,22 @@ const ResumeUpload = ({ user, selectedRole }) => {
 
   const startInterview = async () => {
     try {
-      // Mock interview start - replace with actual implementation
+      // Store candidate data for Amazon Q
+      localStorage.setItem('candidateProfile', JSON.stringify({
+        experience: analysis.experience,
+        domain: analysis.domain,
+        atsScore: analysis.atsScore
+      }));
+      
+      localStorage.setItem('resumeData', JSON.stringify({
+        skills: Object.values(analysis.skills).flat(),
+        education: analysis.education,
+        contact: analysis.contact
+      }));
+      
+      // Store selected role for interview
+      localStorage.setItem('selectedRole', JSON.stringify(selectedRole));
+      
       const response = {
         sessionId: `session-${Date.now()}`
       };

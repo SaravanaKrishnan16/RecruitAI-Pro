@@ -19,7 +19,17 @@ function App() {
 
   useEffect(() => {
     // Create demo user if not exists
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
+    const usersData = localStorage.getItem('users') || '[]';
+    let users;
+    try {
+      users = JSON.parse(usersData);
+      if (!Array.isArray(users)) {
+        users = [];
+      }
+    } catch {
+      users = [];
+    }
+    
     if (!users.find(u => u.email === 'demo@example.com')) {
       const demoUser = {
         id: 1,
