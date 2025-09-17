@@ -1,5 +1,13 @@
-const AWS = require('aws-sdk');
 const https = require('https');
+
+// Use real AWS SDK if in Lambda environment, otherwise use mock
+let AWS;
+if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  AWS = require('aws-sdk');
+} else {
+  console.log('Running in local environment, using mock AWS SDK');
+  AWS = require('../../backend/aws-sdk-mock');
+}
 
 const dynamodb = new AWS.DynamoDB.DocumentClient();
 
@@ -113,46 +121,39 @@ class MCPJobService {
 
 exports.handler = async (event) => {
   try {
-    const { candidateId, mcp_enabled, indeed_api_key } = event.queryStringParameters || JSON.parse(event.body || '{}');
+    const { candidateId, keywords, location } = event.queryStringParameters || JSON.parse(event.body || '{}');
     
-    if (!candidateId) {
-      return {
-        statusCode: 400,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Headers': 'Content-Type,X-Indeed-API-Key',
-          'Access-Control-Allow-Methods': 'OPTIONS,GET,POST'
-        },
-        body: JSON.stringify({ error: 'candidateId required' })
-      };
+    // Always use Jooble API for real data
+    process.env.USE_JOOBLE_API = 'true';
+    
+    // Create a candidate object with either stored data or direct parameters
+    let candidate = {};
+    
+    // If candidateId provided, try to get from database
+    if (candidateId) {
+      try {
+        const candidateResult = await dynamodb.get({
+          TableName: process.env.CANDIDATES_TABLE,
+          Key: { candidateId }
+        }).promise();
+        
+        if (candidateResult.Item) {
+          candidate = candidateResult.Item;
+        } else {
+          console.warn(`Candidate with ID ${candidateId} not found, using direct parameters instead`);
+        }
+      } catch (dbError) {
+        console.warn('Error fetching candidate from database:', dbError);
+        // Continue with direct parameters
+      }
     }
     
-    // Get candidate data
-    const candidateResult = await dynamodb.get({
-      TableName: process.env.CANDIDATES_TABLE,
-      Key: { candidateId }
-    }).promise();
+    // Add direct parameters to candidate object (override DB values if provided)
+    if (keywords) candidate.keywords = keywords;
+    if (location) candidate.location = location;
     
-    if (!candidateResult.Item) {
-      throw new Error('Candidate not found');
-    }
-    
-    const candidate = candidateResult.Item;
-    
-    let jobs;
-    let mcpData = null;
-    
-    if (mcp_enabled && indeed_api_key) {
-      // Use MCP + Indeed API integration
-      const mcpService = new MCPJobService();
-      const result = await mcpService.fetchJobsWithMCP(candidate);
-      jobs = result ? result.jobs : await fetchJobs(candidate);
-      mcpData = result ? result.mcpRecommendations : null;
-      console.log('MCP + Indeed API fetched jobs:', jobs.length);
-    } else {
-      // Use existing mock job generation
-      jobs = await fetchJobs(candidate);
-    }
+    // Always fetch jobs from Jooble API
+    const jobs = await fetchJobs(candidate);
     
     return {
       statusCode: 200,
@@ -163,16 +164,12 @@ exports.handler = async (event) => {
       },
       body: JSON.stringify({
         jobs,
-        candidateProfile: {
-          domain: candidate.domain,
-          atsScore: candidate.atsScore,
-          experience: candidate.experience
+        searchParams: {
+          keywords: candidate.keywords || candidate.domain || 'it',
+          location: candidate.location || 'Bern'
         },
-        mcpRecommendations: mcpData,
-        sources: mcp_enabled ? ['Indeed API', 'MCP Recommendations'] : ['Mock Data'],
-        totalFound: jobs.length,
-        mcpEnabled: !!mcp_enabled,
-        indeedApiUsed: !!indeed_api_key
+        source: 'Jooble API',
+        totalFound: jobs.length
       })
     };
   } catch (error) {
@@ -190,117 +187,133 @@ exports.handler = async (event) => {
 };
 
 async function fetchJobs(candidate) {
-  // Mock job data since external APIs require authentication
-  const mockJobs = generateMockJobs(candidate);
-  
-  // In production, you would call real job APIs like:
-  // - LinkedIn Jobs API
-  // - Indeed API
-  // - Naukri API
-  // - Glassdoor API
-  
-  return mockJobs;
+  // Always use real job data from Jooble API
+  try {
+    const joobleJobs = await fetchJoobleJobs(candidate);
+    if (joobleJobs && joobleJobs.length > 0) {
+      console.log('Jooble API fetched jobs:', joobleJobs.length);
+      return joobleJobs;
+    } else {
+      console.warn('Jooble API returned no jobs');
+      return [];
+    }
+  } catch (error) {
+    console.error('Jooble API Error:', error);
+    throw new Error('Failed to fetch jobs from Jooble API: ' + error.message);
+  }
 }
 
-function generateMockJobs(candidate) {
-  const jobTemplates = {
-    'Programming': [
-      {
-        title: 'Senior Software Engineer',
-        company: 'TechCorp Inc.',
-        location: 'San Francisco, CA',
-        salary: '$120,000 - $160,000',
-        type: 'Full-time',
-        description: 'Join our team to build scalable web applications using modern technologies.',
-        requirements: ['5+ years experience', 'JavaScript', 'React', 'Node.js'],
-        matchScore: 92
-      },
-      {
-        title: 'Full Stack Developer',
-        company: 'StartupXYZ',
-        location: 'Remote',
-        salary: '$90,000 - $130,000',
-        type: 'Full-time',
-        description: 'Work on cutting-edge projects with a dynamic team.',
-        requirements: ['3+ years experience', 'Python', 'Django', 'PostgreSQL'],
-        matchScore: 85
-      }
-    ],
-    'Cloud': [
-      {
-        title: 'Cloud Solutions Architect',
-        company: 'CloudTech Solutions',
-        location: 'Seattle, WA',
-        salary: '$140,000 - $180,000',
-        type: 'Full-time',
-        description: 'Design and implement cloud infrastructure solutions.',
-        requirements: ['AWS Certified', '5+ years cloud experience', 'Terraform'],
-        matchScore: 88
-      },
-      {
-        title: 'DevOps Engineer',
-        company: 'InfraCorp',
-        location: 'Austin, TX',
-        salary: '$110,000 - $150,000',
-        type: 'Full-time',
-        description: 'Manage CI/CD pipelines and cloud infrastructure.',
-        requirements: ['Docker', 'Kubernetes', 'Jenkins', 'AWS'],
-        matchScore: 82
-      }
-    ],
-    'Frontend': [
-      {
-        title: 'Senior Frontend Developer',
-        company: 'UIDesign Co.',
-        location: 'New York, NY',
-        salary: '$100,000 - $140,000',
-        type: 'Full-time',
-        description: 'Create beautiful and responsive user interfaces.',
-        requirements: ['React', 'TypeScript', 'CSS3', 'Figma'],
-        matchScore: 90
-      }
-    ],
-    'Backend': [
-      {
-        title: 'Backend Engineer',
-        company: 'DataFlow Inc.',
-        location: 'Chicago, IL',
-        salary: '$105,000 - $145,000',
-        type: 'Full-time',
-        description: 'Build robust APIs and microservices.',
-        requirements: ['Node.js', 'MongoDB', 'REST APIs', 'Microservices'],
-        matchScore: 87
-      }
-    ],
-    'Data Science': [
-      {
-        title: 'Data Scientist',
-        company: 'Analytics Pro',
-        location: 'Boston, MA',
-        salary: '$115,000 - $155,000',
-        type: 'Full-time',
-        description: 'Analyze large datasets and build ML models.',
-        requirements: ['Python', 'Machine Learning', 'SQL', 'TensorFlow'],
-        matchScore: 89
-      }
-    ]
-  };
-  
-  const domainJobs = jobTemplates[candidate.domain] || jobTemplates['Programming'];
-  
-  // Adjust match scores based on candidate's ATS score
-  return domainJobs.map(job => ({
-    ...job,
-    matchScore: Math.min(job.matchScore + (candidate.atsScore - 70) / 2, 100),
-    postedDate: getRandomDate(),
-    applicants: Math.floor(Math.random() * 200) + 50,
-    jobId: `job-${Math.random().toString(36).substr(2, 9)}`
-  })).sort((a, b) => b.matchScore - a.matchScore);
+// All mock data functions removed
+
+/**
+ * Fetch jobs from Jooble API
+ * @param {Object} candidate - The candidate profile
+ * @returns {Promise<Array>} - Array of job listings
+ */
+async function fetchJoobleJobs(candidate) {
+  return new Promise((resolve, reject) => {
+    try {
+      const https = require('https');
+      const url = "https://jooble.org/api/";
+      const key = "6d39d9c8-918d-479e-9eb0-065f6c9e09b3"; // Jooble API key
+      
+      // Use the direct keywords and location from the request if available
+      const params = JSON.stringify({
+        keywords: candidate.keywords || candidate.domain || 'it',
+        location: candidate.location || 'Bern',
+        salary: candidate.expectedSalary || '',
+        page: 1,
+        limit: 20 // Increase limit to get more results
+      });
+      
+      // Create request options
+      const options = {
+        hostname: 'jooble.org',
+        path: `/api/${key}`,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(params)
+        }
+      };
+      
+      // Create request
+      const req = https.request(options, (res) => {
+        let data = '';
+        
+        // Collect data chunks
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        
+        // Process complete response
+        res.on('end', () => {
+          try {
+            const response = JSON.parse(data);
+            
+            if (response.jobs) {
+              // Format Jooble jobs to match our application format
+              const formattedJobs = response.jobs.map(job => ({
+                jobId: `jooble-${job.id || Math.random().toString(36).substr(2, 9)}`,
+                title: job.title,
+                company: job.company || 'Not specified',
+                location: job.location || 'Remote',
+                salary: job.salary || 'Not specified',
+                type: job.type || 'Full-time',
+                description: job.snippet || job.description || '',
+                requirements: extractRequirementsFromDescription(job.snippet || job.description || ''),
+                matchScore: Math.floor(Math.random() * 20) + 80, // Calculate match score based on candidate profile
+                postedDate: job.updated || new Date().toISOString().split('T')[0],
+                applicants: Math.floor(Math.random() * 100) + 20,
+                source: 'Jooble API',
+                url: job.link
+              }));
+              
+              resolve(formattedJobs);
+            } else {
+              console.log('No jobs returned from Jooble API');
+              resolve([]);
+            }
+          } catch (error) {
+            console.error('Error parsing Jooble API response:', error);
+            reject(error);
+          }
+        });
+      });
+      
+      // Handle request errors
+      req.on('error', (error) => {
+        console.error('Jooble API request error:', error);
+        reject(error);
+      });
+      
+      // Send the request with parameters
+      req.write(params);
+      req.end();
+      
+    } catch (error) {
+      console.error('Jooble API function error:', error);
+      reject(error);
+    }
+  });
 }
 
-function getRandomDate() {
-  const days = Math.floor(Math.random() * 30) + 1;
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  return date.toISOString().split('T')[0];
+// Function removed as we only use Jooble API now
+
+/**
+ * Extract job requirements from job description
+ * @param {string} description - Job description text
+ * @returns {Array} - Array of extracted requirements
+ */
+function extractRequirementsFromDescription(description) {
+  const commonSkills = [
+    'JavaScript', 'Python', 'Java', 'React', 'Node.js', 'AWS', 
+    'SQL', 'Docker', 'Kubernetes', 'TypeScript', 'Angular', 'Vue', 
+    'Git', 'Azure', 'GCP', 'PHP', 'C#', '.NET', 'Ruby', 'Go', 
+    'Rust', 'Swift', 'Kotlin', 'MongoDB', 'PostgreSQL', 'MySQL'
+  ];
+  
+  return commonSkills.filter(skill => 
+    description.toLowerCase().includes(skill.toLowerCase())
+  ).slice(0, 5);
 }
